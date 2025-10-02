@@ -5,7 +5,7 @@ edition = "2024"
 description = "DMLS command-line agent."
 categories = ["cryptography"]
 keywords = ["mls", "rfc9420", "e2ee"]
-license = "MIT"
+license-file = "LICENSE"
 readme = "README.md"
 repository = "https://github.com/josephlukefahr/dmls"
 

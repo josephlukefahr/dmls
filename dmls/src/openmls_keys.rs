@@ -1,16 +1,22 @@
-//! Custom data structures for signing keys for OpenMLS.
+//! Custom data structures for signing keys used by OpenMLS.
 //!
-//! Copyright (c) 2025 Joseph W Lukefahr
-//! SPDX-License-Identifier: MIT
+//! This module provides lightweight wrappers around raw signature key bytes and exposes them
+//! as types compatible with the OpenMLS storage traits. The goal is to demonstrate how a
+//! simple, serializable key pair type can be implemented and integrated into the provider.
 //!
-//! # Custom OpenMLS Signing Keys
+//! The `SignatureKeyPair` type supports creation from an `OpenMlsCrypto` impl and exposes
+//! the raw bytes for signing operations. The `SignaturePublicKey` type provides a compact
+//! serializable representation suitable for storage and lookup.
 //!
-//! This module provides custom data structures for handling signing keys
-//! used in OpenMLS (Message Layer Security) credentials. It includes structures
-//! for public signature keys and signature key pairs, along with their
-//! associated methods and traits.
+//! Example (pseudo-Rust):
+//!
+//! ```ignore
+//! let (priv, pub) = crypto.signature_key_gen(SignatureScheme::ED25519)?;
+//! let skp = SignatureKeyPair::from_raw(priv, pub, SignatureScheme::ED25519);
+//! let pub_key = skp.public_key();
+//! ```
 
-use base64::{Engine, engine::general_purpose::STANDARD as Base64Standard};
+use base64::{Engine, engine::general_purpose::STANDARD as Base64};
 use openmls_traits::{
     crypto::OpenMlsCrypto,
     storage::{CURRENT_VERSION, Entity, Key, traits},
@@ -38,7 +44,7 @@ pub struct SignaturePublicKey {
 impl core::fmt::Debug for SignaturePublicKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SignaturePublicKey")
-            .field("value", &Base64Standard.encode(&self.value).to_string())
+            .field("value", &Base64.encode(&self.value).to_string())
             .finish()
     }
 }
@@ -70,6 +76,13 @@ impl SignaturePublicKey {
     }
 }
 
+/// Create a `SignaturePublicKey` from raw bytes.
+impl From<Vec<u8>> for SignaturePublicKey {
+    fn from(value: Vec<u8>) -> Self {
+        SignaturePublicKey { value }
+    }
+}
+
 /// A signature key pair to be used instead of the default provided data structure.
 ///
 /// This structure represents a pair of private and public keys used for signing
@@ -92,8 +105,8 @@ pub struct SignatureKeyPair {
 impl core::fmt::Debug for SignatureKeyPair {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("SignatureKeyPair")
-            .field("private", &Base64Standard.encode(&self.private).to_string())
-            .field("public", &Base64Standard.encode(&self.public).to_string())
+            .field("private", &Base64.encode(&self.private).to_string())
+            .field("public", &Base64.encode(&self.public).to_string())
             .field("signature_scheme", &self.signature_scheme)
             .finish()
     }
@@ -142,6 +155,22 @@ impl SignatureKeyPair {
             public,
             signature_scheme,
         })
+    }
+}
+
+/// Additional ergonomic constructors and helpers for `SignatureKeyPair`.
+impl SignatureKeyPair {
+    /// Create a keypair directly from the cryptographic provider and return its base64-encoded
+    /// public key for easy storage or display.
+    ///
+    /// Example:
+    ///
+    /// ```ignore
+    /// let skp = SignatureKeyPair::from_crypto(&crypto, SignatureScheme::ED25519)?;
+    /// let pub_b64 = base64::engine::general_purpose::STANDARD.encode(skp.public_key_raw());
+    /// ```
+    pub fn public_key_b64(&self) -> String {
+        Base64.encode(&self.public)
     }
 }
 

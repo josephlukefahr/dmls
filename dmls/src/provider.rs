@@ -1,15 +1,17 @@
-//! The main provider struct for DMLS, implementing the OpenMLS provider interface.
+//! DMLS provider implementation wiring OpenMLS crypto and storage to application state.
 //!
-//! # DmlsProvider
+//! `DmlsProvider` is the glue between the `DmlsState` (persistent application state), the
+//! `OpenMlsKeyValueStore` (storage backend), and the cryptographic provider (`RustCrypto`).
+//! It implements the `OpenMlsProvider` trait required by the OpenMLS library and the `Signer`
+//! trait used when producing credentials or signing commits.
 //!
-//! This module defines the `DmlsProvider` struct, which implements the `OpenMlsProvider` trait for DMLS.
+//! Example (pseudo-Rust):
 //!
-//! The provider encapsulates cryptographic and storage backends, as well as the persistent DMLS state.
-//!
-//! ## Features
-//! - Integrates OpenMLS cryptography and storage with DMLS state
-//! - Provides access to cryptographic, random, and storage providers
-//! - Designed for use as the main provider in DMLS applications
+//! ```ignore
+//! let provider = DmlsProvider::new(state, RustCrypto::default());
+//! let storage = provider.storage();
+//! let signature = provider.sign(payload)?;
+//! ```
 
 use super::{openmls_kvstore::OpenMlsKeyValueStore, state::DmlsState};
 use openmls_rust_crypto::RustCrypto;
@@ -21,6 +23,14 @@ use openmls_traits::{
 };
 
 /// The main provider struct for DMLS, implementing the OpenMLS provider interface.
+///
+/// Example usage of `DmlsProvider`:
+///
+/// ```ignore
+/// let state = DmlsState::new(signature_key_pair);
+/// let provider = DmlsProvider::new(state, RustCrypto::default());
+/// let storage = provider.storage();
+/// ```
 #[derive(Debug)]
 pub struct DmlsProvider {
     /// The persistent DMLS state, including protocol version and key-value store.

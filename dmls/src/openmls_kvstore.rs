@@ -1,26 +1,27 @@
-//! Key-value store for OpenMLS state, using base64 encoding for all keys and values.
+//! An in-memory key-value store that implements the OpenMLS `StorageProvider` trait.
 //!
-//! Copyright (c) 2025 Joseph W Lukefahr
-//! SPDX-License-Identifier: MIT
+//! This store is intentionally simple and designed for example/demo use. It stores all keys and values
+//! as base64-encoded strings inside a `HashMap<String, String>` protected by a `RwLock` for basic
+//! concurrent access. Binary data (group state, secrets, key packages) is serialized with Serde and then
+//! base64-encoded before insertion.
 //!
-//! # An OpenMLS Key-Value Store
+//! Important notes:
+//! - This store is serializable via Serde making it easy to persist or snapshot for tests.
+//! - Encoding everything as base64 keeps the map string-only and avoids issues with binary keys/values.
+//! - The implementation focuses on correctness and readability for learning; it's not optimized for
+//!   production use or large-scale storage.
 //!
-//! This module provides a thread-safe key-value store for use with OpenMLS as a `StorageProvider` backend.
-//! All keys and values are base64-encoded, allowing for safe storage of binary data in a string-based map.
+//! Example use (pseudo-Rust):
 //!
-//! The store is implemented using a `HashMap<String, String>` protected by a `RwLock` for concurrent access.
-//! It supports all required OpenMLS storage operations, including storing, reading, appending, and deleting
-//! cryptographic state, proposals, secrets, and group information. The store is serializable and deserializable
-//! using Serde, making it suitable for persistence or testing scenarios.
-//!
-//! ## Features
-//! - Thread-safe storage
-//! - Base64 encoding for all keys and values
-//! - Implements the OpenMLS `StorageProvider` trait
-//! - Supports all OpenMLS state and secret types
-//! - Suitable for use in tests, demos, or as a backend for persistent storage
+//! ```ignore
+//! let store = OpenMlsKeyValueStore::default();
+//! // write a group state
+//! store.write_group_state(&group_id, &group_state)?;
+//! // read it back
+//! let gs = store.group_state(&group_id)?;
+//! ```
 
-use base64::{Engine, engine::general_purpose::STANDARD as Base64Standard};
+use base64::{Engine, engine::general_purpose::STANDARD as Base64};
 // use log;
 use openmls_traits::storage::{CURRENT_VERSION, Entity, StorageProvider, traits};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -99,10 +100,7 @@ impl OpenMlsKeyValueStore {
 
         log::trace!("{}", std::backtrace::Backtrace::capture());
 
-        values.insert(
-            Base64Standard.encode(storage_key),
-            Base64Standard.encode(value),
-        );
+        values.insert(Base64.encode(storage_key), Base64.encode(value));
         Ok(())
     }
 
@@ -130,17 +128,16 @@ impl OpenMlsKeyValueStore {
 
         // fetch value from db, falling back to an empty list if doens't exist
         let list_bytes = values
-            .entry(Base64Standard.encode(storage_key))
+            .entry(Base64.encode(storage_key))
             .or_insert("[]".to_owned());
 
         // parse old value and push new data
-        let mut list: Vec<Vec<u8>> =
-            serde_json::from_slice(&Base64Standard.decode(&list_bytes).unwrap())?;
+        let mut list: Vec<Vec<u8>> = serde_json::from_slice(&Base64.decode(&list_bytes).unwrap())?;
         list.push(value);
 
         // write back, reusing the old buffer
         list_bytes.truncate(0);
-        let encoded = Base64Standard.encode(serde_json::to_vec(&list)?);
+        let encoded = Base64.encode(serde_json::to_vec(&list)?);
         list_bytes.push_str(&encoded);
 
         Ok(())
@@ -170,19 +167,18 @@ impl OpenMlsKeyValueStore {
 
         // fetch value from db, falling back to an empty list if doens't exist
         let list_bytes = values
-            .entry(Base64Standard.encode(storage_key))
+            .entry(Base64.encode(storage_key))
             .or_insert("[]".to_owned());
 
         // parse old value, find value to delete and remove it from list
-        let mut list: Vec<Vec<u8>> =
-            serde_json::from_slice(&Base64Standard.decode(&list_bytes).unwrap())?;
+        let mut list: Vec<Vec<u8>> = serde_json::from_slice(&Base64.decode(&list_bytes).unwrap())?;
         if let Some(pos) = list.iter().position(|stored_item| stored_item == &value) {
             list.remove(pos);
         }
 
         // write back, reusing the old buffer
         list_bytes.truncate(0);
-        let encoded = Base64Standard.encode(serde_json::to_vec(&list)?);
+        let encoded = Base64.encode(serde_json::to_vec(&list)?);
         list_bytes.push_str(&encoded);
 
         Ok(())
@@ -208,10 +204,10 @@ impl OpenMlsKeyValueStore {
 
         log::trace!("{}", std::backtrace::Backtrace::capture());
 
-        let value = values.get(&Base64Standard.encode(storage_key));
+        let value = values.get(&Base64.encode(storage_key));
 
         if let Some(value) = value {
-            serde_json::from_slice(&Base64Standard.decode(value).unwrap())
+            serde_json::from_slice(&Base64.decode(value).unwrap())
                 .map_err(|_| OpenMlsKeyValueStoreError::SerializationError)
                 .map(|v| Some(v))
         } else {
@@ -242,9 +238,9 @@ impl OpenMlsKeyValueStore {
 
         log::trace!("{}", std::backtrace::Backtrace::capture());
 
-        let value: Vec<Vec<u8>> = match values.get(&Base64Standard.encode(storage_key)) {
+        let value: Vec<Vec<u8>> = match values.get(&Base64.encode(storage_key)) {
             Some(list_bytes) => {
-                serde_json::from_slice(&Base64Standard.decode(list_bytes).unwrap()).unwrap()
+                serde_json::from_slice(&Base64.decode(list_bytes).unwrap()).unwrap()
             }
             None => vec![],
         };
@@ -279,7 +275,7 @@ impl OpenMlsKeyValueStore {
 
         log::trace!("{}", std::backtrace::Backtrace::capture());
 
-        values.remove(&Base64Standard.encode(storage_key));
+        values.remove(&Base64.encode(storage_key));
 
         Ok(())
     }
@@ -398,7 +394,7 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         let key = build_key::<CURRENT_VERSION, &GroupId>(INTERIM_TRANSCRIPT_HASH_LABEL, group_id);
         let value = serde_json::to_vec(&interim_transcript_hash).unwrap();
 
-        values.insert(Base64Standard.encode(key), Base64Standard.encode(value));
+        values.insert(Base64.encode(key), Base64.encode(value));
         Ok(())
     }
 
@@ -414,7 +410,7 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         let key = build_key::<CURRENT_VERSION, &GroupId>(GROUP_CONTEXT_LABEL, group_id);
         let value = serde_json::to_vec(&group_context).unwrap();
 
-        values.insert(Base64Standard.encode(key), Base64Standard.encode(value));
+        values.insert(Base64.encode(key), Base64.encode(value));
         Ok(())
     }
 
@@ -430,7 +426,7 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         let key = build_key::<CURRENT_VERSION, &GroupId>(CONFIRMATION_TAG_LABEL, group_id);
         let value = serde_json::to_vec(&confirmation_tag).unwrap();
 
-        values.insert(Base64Standard.encode(key), Base64Standard.encode(value));
+        values.insert(Base64.encode(key), Base64.encode(value));
         Ok(())
     }
 
@@ -447,7 +443,7 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
             build_key::<CURRENT_VERSION, &SignaturePublicKey>(SIGNATURE_KEY_PAIR_LABEL, public_key);
         let value = serde_json::to_vec(&signature_key_pair).unwrap();
 
-        values.insert(Base64Standard.encode(key), Base64Standard.encode(value));
+        values.insert(Base64.encode(key), Base64.encode(value));
         Ok(())
     }
 
@@ -493,10 +489,10 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         let values = self.values.read().unwrap();
         let key = build_key::<CURRENT_VERSION, &GroupId>(TREE_LABEL, group_id);
 
-        let Some(value) = values.get(&Base64Standard.encode(key)) else {
+        let Some(value) = values.get(&Base64.encode(key)) else {
             return Ok(None);
         };
-        let value = serde_json::from_slice(&Base64Standard.decode(value).unwrap()).unwrap();
+        let value = serde_json::from_slice(&Base64.decode(value).unwrap()).unwrap();
 
         Ok(value)
     }
@@ -511,10 +507,10 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         let values = self.values.read().unwrap();
         let key = build_key::<CURRENT_VERSION, &GroupId>(GROUP_CONTEXT_LABEL, group_id);
 
-        let Some(value) = values.get(&Base64Standard.encode(key)) else {
+        let Some(value) = values.get(&Base64.encode(key)) else {
             return Ok(None);
         };
-        let value = serde_json::from_slice(&Base64Standard.decode(value).unwrap()).unwrap();
+        let value = serde_json::from_slice(&Base64.decode(value).unwrap()).unwrap();
 
         Ok(value)
     }
@@ -529,10 +525,10 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         let values = self.values.read().unwrap();
         let key = build_key::<CURRENT_VERSION, &GroupId>(INTERIM_TRANSCRIPT_HASH_LABEL, group_id);
 
-        let Some(value) = values.get(&Base64Standard.encode(key)) else {
+        let Some(value) = values.get(&Base64.encode(key)) else {
             return Ok(None);
         };
-        let value = serde_json::from_slice(&Base64Standard.decode(value).unwrap()).unwrap();
+        let value = serde_json::from_slice(&Base64.decode(value).unwrap()).unwrap();
 
         Ok(value)
     }
@@ -547,10 +543,10 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         let values = self.values.read().unwrap();
         let key = build_key::<CURRENT_VERSION, &GroupId>(CONFIRMATION_TAG_LABEL, group_id);
 
-        let Some(value) = values.get(&Base64Standard.encode(key)) else {
+        let Some(value) = values.get(&Base64.encode(key)) else {
             return Ok(None);
         };
-        let value = serde_json::from_slice(&Base64Standard.decode(value).unwrap()).unwrap();
+        let value = serde_json::from_slice(&Base64.decode(value).unwrap()).unwrap();
 
         Ok(value)
     }
@@ -567,10 +563,10 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         let key =
             build_key::<CURRENT_VERSION, &SignaturePublicKey>(SIGNATURE_KEY_PAIR_LABEL, public_key);
 
-        let Some(value) = values.get(&Base64Standard.encode(key)) else {
+        let Some(value) = values.get(&Base64.encode(key)) else {
             return Ok(None);
         };
-        let value = serde_json::from_slice(&Base64Standard.decode(value).unwrap()).unwrap();
+        let value = serde_json::from_slice(&Base64.decode(value).unwrap()).unwrap();
 
         Ok(value)
     }
@@ -882,10 +878,10 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         log::debug!("Reading encryption epoch key pairs");
 
         let values = self.values.read().unwrap();
-        let value = values.get(&Base64Standard.encode(storage_key));
+        let value = values.get(&Base64.encode(storage_key));
 
         if let Some(value) = value {
-            return Ok(serde_json::from_slice(&Base64Standard.decode(value).unwrap()).unwrap());
+            return Ok(serde_json::from_slice(&Base64.decode(value).unwrap()).unwrap());
         }
 
         Ok(vec![])
@@ -918,12 +914,12 @@ impl StorageProvider<CURRENT_VERSION> for OpenMlsKeyValueStore {
         for proposal_ref in proposal_refs {
             // Delete all proposals.
             let key = serde_json::to_vec(&(group_id, proposal_ref))?;
-            values.remove(&Base64Standard.encode(key));
+            values.remove(&Base64.encode(key));
         }
 
         // Delete the proposal refs from the store.
         let key = build_key::<CURRENT_VERSION, &GroupId>(PROPOSAL_QUEUE_REFS_LABEL, group_id);
-        values.remove(&Base64Standard.encode(key));
+        values.remove(&Base64.encode(key));
 
         Ok(())
     }
@@ -1056,14 +1052,17 @@ fn build_key_from_vec<const V: u16>(label: &[u8], key: Vec<u8>) -> Vec<u8> {
     key_out
 }
 
-/// Builds a key by serializing the key and concatenating it with the label and version.
+/// Build a storage key from a label and a serializable key, returning a deterministic byte vector.
 ///
-/// # Arguments
-/// * `label` - A byte slice representing the label.
-/// * `key` - The key, which must implement Serialize.
+/// This is used to create unique map keys for different OpenMLS entities by appending a version
+/// number and serializing the key argument. The resulting byte vector is then base64-encoded for
+/// insertion into the internal map.
 ///
-/// # Returns
-/// * `Vec<u8>` - The constructed key as a vector of bytes.
+/// Example:
+///
+/// ```ignore
+/// let storage_key = build_key::<CURRENT_VERSION, _>(b"GroupState", &group_id);
+/// ```
 fn build_key<const V: u16, K: Serialize>(label: &[u8], key: K) -> Vec<u8> {
     build_key_from_vec::<V>(label, serde_json::to_vec(&key).unwrap())
 }
