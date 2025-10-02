@@ -1,3 +1,6 @@
 [submodule "openmls"]
 	path = openmls
 	url = https://github.com/josephlukefahr/openmls
+[submodule "distributed_mls"]
+	path = distributed_mls
+	url = https://github.com/josephlukefahr/distributed_mls
