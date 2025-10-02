@@ -9,7 +9,7 @@ participants=(alice bob charlie)
 echo "Processing messages for (${participants[@]})."
 
 for p1 in "${participants[@]}"; do
-  inName="${p1}.mlsmsg"
+  inName="from_${p1}.mlsmsg"
   for p2 in "${participants[@]}"; do
     if [ $p1 != $p2 ]; then
       state="${p2}.json"

@@ -31,7 +31,7 @@ use openmls::{
     credentials::{BasicCredential, CredentialWithKey},
     framing::{
         ApplicationMessage, MlsMessageBodyIn, MlsMessageIn, MlsMessageOut, ProcessedMessage,
-        ProtocolMessage,
+        ProtocolMessage, Sender,
     },
     group::{MlsGroup, MlsGroupCreateConfig, MlsGroupJoinConfig, StagedCommit, StagedWelcome},
     key_packages::{KeyPackage, key_package_in::KeyPackageIn},
@@ -222,7 +222,10 @@ pub fn process_proto_msg(
     match MlsGroup::load(provider.storage(), proto_msg.group_id())? {
         Some(mut g) => {
             let m = g.process_message(provider, proto_msg)?;
-            Ok((g, m))
+            match m.sender() {
+                Sender::Member(leaf_idx) if leaf_idx.usize() == 0 => Ok((g, m)),
+                _ => Err("Message not sent by the send group owner".into()),
+            }
         }
         None => Err("No local group found with the given Group ID".into()),
     }

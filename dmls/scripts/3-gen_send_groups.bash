@@ -12,7 +12,7 @@ echo "Generating send groups for (${participants[@]})."
 for p1 in "${participants[@]}"; do
   state="${p1}.json"
   inName="for_${p1}.mlskp"
-  outName="${p1}.mlsmsg"
+  outName="from_${p1}.mlsmsg"
   echo "Generating welcome message for ${p1}"
   cat $inName | RUST_LOG=warn $binary use-state $state gen-send-group >> $outName
   rm $inName

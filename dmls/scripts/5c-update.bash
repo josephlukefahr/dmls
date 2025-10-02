@@ -11,7 +11,7 @@ echo "Updating (${participants[@]})."
 
 for p1 in "${participants[@]}"; do
   state="${p1}.json"
-  outName="${p1}.mlsmsg"
+  outName="from_${p1}.mlsmsg"
   echo "Using ${p1} to update"
   $binary use-state $state update >> $outName
 done
